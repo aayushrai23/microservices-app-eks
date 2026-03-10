@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DB_HOST: postgres
+      DB_NAME: authdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      JWT_SECRET: supersecretkey_change_in_prod
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    restart: unless-stopped
+    environment:
+      PORT: 3002
+      DB_HOST: postgres
+      DB_NAME: paymentdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      AUTH_SERVICE_URL: http://auth-service:3001
+      NOTIFICATION_SERVICE_URL: http://notification-service:3003
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    restart: unless-stopped
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_NAME: notificationdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_AUTH_URL: http://localhost:3001
+      NEXT_PUBLIC_PAYMENT_URL: http://localhost:3002
+      NEXT_PUBLIC_NOTIFICATION_URL: http://localhost:3003
+    ports:
+      - "3000:3000"
+    depends_on:
+      - auth-service
+      - payment-service
+      - notification-service
+    networks:
+      - microservices-net
+
+networks:
+  microservices-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
