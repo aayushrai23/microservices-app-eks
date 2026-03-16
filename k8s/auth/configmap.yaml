@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: 
+ name: auth-configmap
+ namespace: microservices
+data:
+  PORT: "3001"
+  MONGO_URI: "mongodb://admin:password123@mongodb-service.mongodb.svc.cluster.local:27017/authdb?authSource=admin" 

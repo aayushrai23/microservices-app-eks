@@ -1,36 +1,36 @@
-const { Pool } = require('pg');
-const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
-  port: 5432,
-  database: process.env.DB_NAME || 'paymentdb',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres123',
-});
+const mongoose = require('mongoose');
+
+// MongoDB connection with retry logic
 const connectDB = async () => {
   let retries = 10;
   while (retries) {
     try {
-      await pool.query('SELECT 1');
-      console.log('✅ Payment DB connected');
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS payments (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id UUID NOT NULL,
-          amount DECIMAL(10,2) NOT NULL,
-          currency VARCHAR(10) DEFAULT 'USD',
-          status VARCHAR(20) DEFAULT 'pending',
-          description TEXT,
-          payment_method VARCHAR(50) DEFAULT 'card',
-          transaction_id VARCHAR(255),
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `);
+      await mongoose.connect(
+        process.env.MONGO_URI || 'mongodb://localhost:27017/paymentdb'
+      );
+      console.log('✅ Payment DB connected (MongoDB)');
       return;
     } catch (err) {
       retries--;
-      console.log('DB not ready, retrying... (' + retries + ' left)');
+      console.log(`DB not ready, retrying... (${retries} left)`);
       await new Promise(r => setTimeout(r, 3000));
     }
   }
+  throw new Error('Could not connect to MongoDB after retries');
 };
-module.exports = { pool, connectDB };
+
+// Payment Schema — PostgreSQL ki payments table ka equivalent
+const paymentSchema = new mongoose.Schema({
+  user_id:        { type: String,  required: true },
+  amount:         { type: Number,  required: true },
+  currency:       { type: String,  default: 'USD' },
+  status:         { type: String,  default: 'pending' },
+  description:    { type: String },
+  payment_method: { type: String,  default: 'card' },
+  transaction_id: { type: String },
+  created_at:     { type: Date,    default: Date.now }
+});
+
+const Payment = mongoose.model('Payment', paymentSchema);
+
+module.exports = { connectDB, Payment };

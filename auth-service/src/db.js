@@ -1,33 +1,34 @@
-const { Pool } = require('pg');
-const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'authdb',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres123',
-});
+const mongoose = require('mongoose');
+
+// MongoDB connection with retry logic
 const connectDB = async () => {
   let retries = 10;
   while (retries) {
     try {
-      await pool.query('SELECT 1');
-      console.log('✅ Auth DB connected');
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          name VARCHAR(100) NOT NULL,
-          email VARCHAR(255) UNIQUE NOT NULL,
-          password VARCHAR(255) NOT NULL,
-          role VARCHAR(20) DEFAULT 'user',
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `);
+      await mongoose.connect(
+        process.env.MONGO_URI || 'mongodb://localhost:27017/authdb'
+      );
+      console.log('✅ Auth DB connected (MongoDB)');
       return;
     } catch (err) {
       retries--;
-      console.log('DB not ready, retrying... (' + retries + ' left)');
+      console.log(`DB not ready, retrying... (${retries} left)`);
       await new Promise(r => setTimeout(r, 3000));
     }
   }
+  throw new Error('Could not connect to MongoDB after retries');
 };
-module.exports = { pool, connectDB };
+
+// User Schema — MongoDB ka table equivalent
+const userSchema = new mongoose.Schema({
+  name:       { type: String, required: true },
+  email:      { type: String, required: true, unique: true },
+  password:   { type: String, required: true },
+  role:       { type: String, default: 'user' },
+  created_at: { type: Date,   default: Date.now }
+});
+
+// Model — MongoDB ka table ka naam
+const User = mongoose.model('User', userSchema);
+
+module.exports = { connectDB, User };

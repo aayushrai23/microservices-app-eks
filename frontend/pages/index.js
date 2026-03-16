@@ -18,7 +18,7 @@ export default function Dashboard() {
     try {
       const { data } = await authAPI.me();
       setUser(data.user);
-      const [pays, notifs] = await Promise.allSettled([paymentAPI.myPayments(), notificationAPI.byUser(data.user.id)]);
+      const [pays, notifs] = await Promise.allSettled([paymentAPI.myPayments(), notificationAPI.byUser(data.user._id)]);
       if (pays.status === 'fulfilled') setPayments(pays.value.data.payments);
       if (notifs.status === 'fulfilled') setNotifications(notifs.value.data.notifications);
     } catch { localStorage.removeItem('token'); router.push('/login'); }

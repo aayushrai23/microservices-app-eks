@@ -1,58 +1,114 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
-const { pool } = require('../db');
+const { User } = require('../db');
 const { generateToken, verifyToken } = require('../middleware/auth');
 const router = express.Router();
 
+// Register — naya user banao
 router.post('/register', [
   body('name').notEmpty(),
   body('email').isEmail(),
   body('password').isLength({ min: 6 }),
 ], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ errors: errors.array() });
+
   const { name, email, password } = req.body;
   try {
-    const exists = await pool.query('SELECT id FROM users WHERE email=$1', [email]);
-    if (exists.rows.length) return res.status(409).json({ error: 'Email already registered' });
+    // Check karo email pehle se registered hai ya nahi
+    const exists = await User.findOne({ email });
+    if (exists)
+      return res.status(409).json({ error: 'Email already registered' });
+
+    // Password hash karo — kabhi plain text store nahi karte
     const hashed = await bcrypt.hash(password, 12);
-    const result = await pool.query(
-      'INSERT INTO users (name, email, password) VALUES ($1,$2,$3) RETURNING id, name, email, role, created_at',
-      [name, email, hashed]
-    );
-    const user = result.rows[0];
-    const token = generateToken({ id: user.id, email: user.email, role: user.role });
-    res.status(201).json({ message: 'User registered successfully', token, user });
+
+    // User MongoDB mein save karo
+    const user = await User.create({ name, email, password: hashed });
+
+    // JWT token banao
+    const token = generateToken({
+      id:    user._id,
+      email: user.email,
+      role:  user.role
+    });
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      token,
+      user: {
+        id:    user._id,
+        name:  user.name,
+        email: user.email,
+        role:  user.role
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
 
-router.post('/login', [body('email').isEmail(), body('password').notEmpty()], async (req, res) => {
+// Login — existing user authenticate karo
+router.post('/login', [
+  body('email').isEmail(),
+  body('password').notEmpty()
+], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ errors: errors.array() });
+
   const { email, password } = req.body;
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
-    if (!result.rows.length) return res.status(401).json({ error: 'Invalid credentials' });
-    const user = result.rows[0];
+    // Email se user dhundo
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Password verify karo
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-    const token = generateToken({ id: user.id, email: user.email, role: user.role });
-    res.json({ message: 'Login successful', token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    if (!valid)
+      return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = generateToken({
+      id:    user._id,
+      email: user.email,
+      role:  user.role
+    });
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id:    user._id,
+        name:  user.name,
+        email: user.email,
+        role:  user.role
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
+// Me — current logged in user ki info
 router.get('/me', verifyToken, async (req, res) => {
-  const result = await pool.query('SELECT id, name, email, role, created_at FROM users WHERE id=$1', [req.user.id]);
-  if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
-  res.json({ user: result.rows[0] });
+  try {
+    // .select('-password') — password field return mat karo
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user)
+      return res.status(404).json({ error: 'User not found' });
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get user' });
+  }
 });
 
-router.post('/verify', verifyToken, (req, res) => res.json({ valid: true, user: req.user }));
+// Verify — doosri services is route se token verify karti hain
+router.post('/verify', verifyToken, (req, res) => {
+  res.json({ valid: true, user: req.user });
+});
 
 module.exports = router;

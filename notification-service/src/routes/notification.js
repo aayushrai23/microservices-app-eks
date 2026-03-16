@@ -1,29 +1,61 @@
 const express = require('express');
-const { pool } = require('../db');
+const { Notification } = require('../db');
 const router = express.Router();
 
+// POST /send — payment service yahan call karta hai
 router.post('/send', async (req, res) => {
   const { user_id, type, subject, message, email } = req.body;
-  if (!user_id || !message) return res.status(400).json({ error: 'user_id and message required' });
+
+  if (!user_id || !message)
+    return res.status(400).json({ error: 'user_id and message required' });
+
   try {
-    const result = await pool.query(
-      "INSERT INTO notifications (user_id, type, subject, message, email, status) VALUES ($1,$2,$3,$4,$5,'sent') RETURNING *",
-      [user_id, type || 'general', subject, message, email]
-    );
-    console.log('📧 Notification → [' + type + '] to ' + email + ': ' + message);
-    res.status(201).json({ message: 'Notification sent', notification: result.rows[0] });
+    // Notification MongoDB mein save karo
+    const notification = await Notification.create({
+      user_id,
+      type:    type || 'general',
+      subject,
+      message,
+      email,
+      status: 'sent'
+    });
+
+    // Console mein log karo — debugging ke liye useful
+    console.log(`📧 Notification → [${type}] to ${email}: ${message}`);
+
+    res.status(201).json({
+      message: 'Notification sent',
+      notification
+    });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Could not send notification' });
   }
 });
 
+// GET /user/:userId — ek user ki saari notifications
 router.get('/user/:userId', async (req, res) => {
-  const result = await pool.query('SELECT * FROM notifications WHERE user_id=$1 ORDER BY created_at DESC', [req.params.userId]);
-  res.json({ notifications: result.rows });
+  try {
+    const notifications = await Notification
+      .find({ user_id: req.params.userId })
+      .sort({ created_at: -1 });
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
 });
 
+// GET / — saari notifications
 router.get('/', async (req, res) => {
-  const result = await pool.query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100');
-  res.json({ notifications: result.rows });
+  try {
+    const notifications = await Notification
+      .find()
+      .sort({ created_at: -1 })
+      .limit(100);
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
 });
+
 module.exports = router;

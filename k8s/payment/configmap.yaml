@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-configmap
+  namespace: microservices
+data:
+  PORT: "3002"
+  MONGO_URI: "mongodb://admin:password123@mongodb-service.mongodb.svc.cluster.local:27017/paymentdb?authSource=admin"
+  AUTH_SERVICE_URL: "http://auth-service.microservices.svc.cluster.local:3001"
+  NOTIFICATION_SERVICE_URL: "http://notification-service.microservices.svc.cluster.local:3003"
